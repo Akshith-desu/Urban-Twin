@@ -1,0 +1,6 @@
+cache/
+data/
+graphs/
+logs/
+src/__pycache__/
+venv/
