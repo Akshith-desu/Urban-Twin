@@ -1,6 +1,6 @@
 """
 Phase 2 — Async Event Bus
-Communication backbone for the multi-agent urban digital twin.
+Communication backbone for the multi-agent urban digital twin(handles all the events).
 
 - asyncio.Queue based (zero external dependencies)
 - Typed event schema via dataclass
