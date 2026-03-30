@@ -1,411 +1,218 @@
 """
-Phase 2 — Async Event Bus
-Communication backbone for the multi-agent urban digital twin(handles all the events).
+Phase 2 - event_bus.py
+Async event bus using asyncio.Queue with topic-based routing.
+Zero external dependencies — no Redis needed for Phase 2.
 
-- asyncio.Queue based (zero external dependencies)
-- Typed event schema via dataclass
-- Topic-based routing: agents subscribe by event_type
-- Structured JSON event logger (file + in-memory buffer)
-- Event replay tool for debugging simulation runs
-- Key test: 10,000 events, zero dropped, correct delivery order per topic
+Architecture:
+  - One master queue receives ALL published events
+  - A router task reads from master queue and fans out to per-topic subscriber queues
+  - Each agent gets its own asyncio.Queue per subscribed topic
+  - EventLogger taps every routed event to disk
+
+Usage:
+    bus = EventBus()
+    await bus.start()
+
+    # subscribe (returns an async generator)
+    async for event in bus.subscribe("my_agent", [EventType.NODE_FAILED]):
+        handle(event)
+
+    # publish
+    await bus.publish(node_failed(Network.POWER, "PS-7", tick=3))
+
+    await bus.stop()
 """
 
 import asyncio
-import json
-import time
-import uuid
-import os
-from dataclasses import dataclass, field, asdict
-from typing import Callable, Coroutine, Any
+import logging
+from typing import List, Dict, Set, AsyncGenerator, Optional
 from collections import defaultdict
 
-LOG_DIR = "logs"
-os.makedirs(LOG_DIR, exist_ok=True)
+from event_schema import Event, EventType, Network, sim_tick, sim_end
+from event_logger import EventLogger
 
+logger = logging.getLogger(__name__)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# EVENT SCHEMA
-# ══════════════════════════════════════════════════════════════════════════════
-
-# All valid event types — agents may only publish these
-EVENT_TYPES = {
-    # Core state changes (all agents)
-    "NODE_FAILED",
-    "NODE_DEGRADED",
-    "NODE_RECOVERED",
-    # Cross-network cascade
-    "CASCADE_TRIGGERED",
-    # Sector-specific
-    "PRESSURE_DROP",       # water
-    "LOAD_SPIKE",          # power
-    "ROUTE_BLOCKED",       # road
-    "SIGNAL_LOSS",         # telecom
-    # Orchestration
-    "SIMULATION_TICK",
-    "SIMULATION_END",
-    # Scenario injection
-    "SCENARIO_INJECT",
-}
-
-
-@dataclass
-class SimEvent:
-    """
-    Typed event schema. Every message on the bus is a SimEvent.
-    Fields match the spec: event_id, timestamp, event_type, source_network,
-    node_id, severity, affected_nodes, cascade_depth, metadata.
-    """
-    event_type: str                          # must be in EVENT_TYPES
-    source_network: str                      # "power" | "water" | "road" | "telecom" | "orchestrator"
-    node_id: str                             # which node triggered this event
-    severity: float = 1.0                    # 0.0 (minor) → 1.0 (total failure)
-    affected_nodes: list = field(default_factory=list)
-    cascade_depth: int = 0                   # how many hops from original failure
-    metadata: dict = field(default_factory=dict)
-    event_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
-    timestamp: float = field(default_factory=time.time)
-
-    def __post_init__(self):
-        if self.event_type not in EVENT_TYPES:
-            raise ValueError(f"Unknown event_type '{self.event_type}'. Must be one of {EVENT_TYPES}")
-        if not 0.0 <= self.severity <= 1.0:
-            raise ValueError(f"severity must be between 0.0 and 1.0, got {self.severity}")
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-    def to_json(self) -> str:
-        return json.dumps(self.to_dict())
-
-    @staticmethod
-    def from_dict(d: dict) -> "SimEvent":
-        return SimEvent(**d)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# EVENT LOGGER
-# ══════════════════════════════════════════════════════════════════════════════
-
-class EventLogger:
-    """
-    Logs every event to:
-    1. In-memory buffer (for replay and analysis within a run)
-    2. JSON lines file on disk (for post-run analysis + paper figures)
-    """
-
-    def __init__(self, log_file: str = f"{LOG_DIR}/simulation_events.jsonl"):
-        self.log_file = log_file
-        self.buffer: list[SimEvent] = []
-        self._file_handle = open(log_file, "w")
-        print(f"  EventLogger: writing to {log_file}")
-
-    def log(self, event: SimEvent):
-        self.buffer.append(event)
-        self._file_handle.write(event.to_json() + "\n")
-        self._file_handle.flush()
-
-    def close(self):
-        self._file_handle.close()
-
-    def get_buffer(self) -> list[SimEvent]:
-        return list(self.buffer)
-
-    def stats(self) -> dict:
-        """Summary of what was logged — useful for paper reporting."""
-        by_type = defaultdict(int)
-        by_network = defaultdict(int)
-        for e in self.buffer:
-            by_type[e.event_type] += 1
-            by_network[e.source_network] += 1
-        return {
-            "total_events": len(self.buffer),
-            "by_type": dict(by_type),
-            "by_network": dict(by_network),
-            "duration_s": round(
-                (self.buffer[-1].timestamp - self.buffer[0].timestamp), 3
-            ) if len(self.buffer) >= 2 else 0,
-        }
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# EVENT BUS
-# ══════════════════════════════════════════════════════════════════════════════
 
 class EventBus:
     """
-    Async event bus using asyncio.Queue.
+    Central async event bus for the simulation.
 
-    - Agents subscribe by event_type (topic-based routing)
-    - Each subscriber gets its own Queue — no shared state between agents
-    - Publisher never blocks — uses put_nowait with overflow protection
-    - All events logged via EventLogger
+    Each subscriber registers a name + list of EventTypes it cares about.
+    The router delivers only matching events to each subscriber's queue.
+    The orchestrator subscribes to ALL event types.
     """
 
-    def __init__(self, logger: EventLogger = None, max_queue_size: int = 10000):
-        # topic -> list of (subscriber_name, asyncio.Queue)
-        self._subscriptions: dict[str, list[tuple[str, asyncio.Queue]]] = defaultdict(list)
-        self._logger = logger
-        self._max_queue_size = max_queue_size
-        self._publish_count = 0
-        self._dropped_count = 0
+    def __init__(self, log_path: str = "data/events.jsonl", maxsize: int = 10_000):
+        self._master_queue: asyncio.Queue = asyncio.Queue(maxsize=maxsize)
 
-    def subscribe(self, event_types: list[str], subscriber_name: str) -> asyncio.Queue:
+        # subscriber_id -> { event_type -> asyncio.Queue }
+        self._subscribers: Dict[str, Dict[EventType, asyncio.Queue]] = defaultdict(dict)
+
+        # subscriber_id -> set of subscribed EventTypes
+        self._subscriptions: Dict[str, Set[EventType]] = defaultdict(set)
+
+        self._event_logger = EventLogger(log_path)
+        self._router_task: Optional[asyncio.Task] = None
+        self._running = False
+
+        # stats
+        self.published_count = 0
+        self.routed_count = 0
+        self.dropped_count = 0
+
+    # ── lifecycle ─────────────────────────────────────────────────────────────
+
+    async def start(self):
+        """Start the router task. Call before any publish/subscribe."""
+        self._running = True
+        self._event_logger.open()
+        self._router_task = asyncio.create_task(self._router(), name="event_router")
+        logger.info("EventBus started")
+
+    async def stop(self):
+        """Drain the queue and shut down cleanly."""
+        self._running = False
+        # sentinel to unblock router
+        await self._master_queue.put(None)
+        if self._router_task:
+            try:
+                await asyncio.wait_for(self._router_task, timeout=5.0)
+            except asyncio.TimeoutError:
+                self._router_task.cancel()
+        self._event_logger.close()
+        logger.info(f"EventBus stopped. published={self.published_count} "
+                    f"routed={self.routed_count} dropped={self.dropped_count}")
+
+    # ── subscribe ─────────────────────────────────────────────────────────────
+
+    def subscribe(self, subscriber_id: str,
+                  event_types: List[EventType],
+                  queue_size: int = 1000) -> Dict[EventType, asyncio.Queue]:
         """
-        Register a subscriber for a list of event types.
-        Returns a single Queue that will receive all matching events.
-        Agents call this once at startup.
+        Register a subscriber and return its queue dict.
+        Call BEFORE bus.start() or at any time before events start flowing.
+
+        Returns: { EventType -> asyncio.Queue }
         """
-        q = asyncio.Queue(maxsize=self._max_queue_size)
-        for event_type in event_types:
-            if event_type not in EVENT_TYPES:
-                raise ValueError(f"Cannot subscribe to unknown event_type '{event_type}'")
-            self._subscriptions[event_type].append((subscriber_name, q))
+        for et in event_types:
+            if et not in self._subscribers[subscriber_id]:
+                self._subscribers[subscriber_id][et] = asyncio.Queue(maxsize=queue_size)
+            self._subscriptions[subscriber_id].add(et)
+
+        logger.debug(f"Subscriber '{subscriber_id}' registered for {[e.value for e in event_types]}")
+        return self._subscribers[subscriber_id]
+
+    def subscribe_all(self, subscriber_id: str, queue_size: int = 5000) -> asyncio.Queue:
+        """
+        Subscribe to ALL event types (used by orchestrator).
+        Returns a single queue that receives every event.
+        """
+        q = asyncio.Queue(maxsize=queue_size)
+        self._subscribers[subscriber_id]["__all__"] = q
+        self._subscriptions[subscriber_id].add("__all__")
         return q
 
-    def publish(self, event: SimEvent):
+    async def get_events(self, subscriber_id: str,
+                         event_types: List[EventType]) -> AsyncGenerator[Event, None]:
         """
-        Publish an event to all subscribers of that event_type.
-        Non-blocking — if a subscriber queue is full, event is dropped and counted.
+        Async generator — yield events as they arrive for this subscriber.
+        Use in an async for loop inside each agent's run() method.
+
+        Example:
+            async for event in bus.get_events("power_agent", [EventType.FLOOD_NODE]):
+                await self.handle(event)
         """
-        self._publish_count += 1
+        queues = self._subscribers.get(subscriber_id, {})
+        while self._running:
+            # poll all relevant queues with a short timeout
+            for et in event_types:
+                q = queues.get(et)
+                if q:
+                    try:
+                        event = q.get_nowait()
+                        yield event
+                    except asyncio.QueueEmpty:
+                        pass
+            await asyncio.sleep(0.001)   # 1ms poll interval
 
-        if self._logger:
-            self._logger.log(event)
+    # ── publish ───────────────────────────────────────────────────────────────
 
-        subscribers = self._subscriptions.get(event.event_type, [])
-        for name, q in subscribers:
+    async def publish(self, event: Event):
+        """
+        Publish an event to the bus.
+        Non-blocking — drops event and increments dropped_count if master queue is full.
+        """
+        try:
+            self._master_queue.put_nowait(event)
+            self.published_count += 1
+        except asyncio.QueueFull:
+            self.dropped_count += 1
+            logger.warning(f"Master queue full — dropped event {event.event_type.value} "
+                           f"from {event.source_network.value}:{event.node_id}")
+
+    async def publish_many(self, events: List[Event]):
+        """Publish a batch of events."""
+        for event in events:
+            await self.publish(event)
+
+    # ── router ────────────────────────────────────────────────────────────────
+
+    async def _router(self):
+        """
+        Core routing loop. Reads from master queue, fans out to subscriber queues.
+        Runs as a background asyncio task.
+        """
+        while True:
             try:
-                q.put_nowait(event)
-            except asyncio.QueueFull:
-                self._dropped_count += 1
-                print(f"  [BUS WARNING] Queue full for '{name}' — dropped event {event.event_id}")
+                event = await asyncio.wait_for(
+                    self._master_queue.get(), timeout=0.1
+                )
+            except asyncio.TimeoutError:
+                if not self._running:
+                    break
+                continue
+
+            # None is the stop sentinel
+            if event is None:
+                break
+
+            # log every event
+            self._event_logger.log(event)
+
+            # fan out to matching subscribers
+            for sub_id, sub_queues in self._subscribers.items():
+                # all-events subscriber (orchestrator)
+                if "__all__" in sub_queues:
+                    try:
+                        sub_queues["__all__"].put_nowait(event)
+                        self.routed_count += 1
+                    except asyncio.QueueFull:
+                        pass
+
+                # topic-filtered subscribers
+                et_queue = sub_queues.get(event.event_type)
+                if et_queue:
+                    try:
+                        et_queue.put_nowait(event)
+                        self.routed_count += 1
+                    except asyncio.QueueFull:
+                        logger.warning(f"Queue full for {sub_id}:{event.event_type.value}")
+
+            self._master_queue.task_done()
+
+    # ── helpers ───────────────────────────────────────────────────────────────
 
     def stats(self) -> dict:
         return {
-            "published": self._publish_count,
-            "dropped": self._dropped_count,
-            "subscribers": {
-                etype: [name for name, _ in subs]
-                for etype, subs in self._subscriptions.items()
-            }
+            "published": self.published_count,
+            "routed":    self.routed_count,
+            "dropped":   self.dropped_count,
+            "queue_size": self._master_queue.qsize(),
+            "subscribers": list(self._subscribers.keys()),
         }
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# EVENT REPLAY TOOL
-# ══════════════════════════════════════════════════════════════════════════════
-
-class EventReplayer:
-    """
-    Step through a recorded simulation run event-by-event.
-    Loads from the JSONL log file written by EventLogger.
-    Useful for debugging cascade chains after a run.
-    """
-
-    def __init__(self, log_file: str = f"{LOG_DIR}/simulation_events.jsonl"):
-        self.events: list[SimEvent] = []
-        self._cursor = 0
-
-        if not os.path.exists(log_file):
-            print(f"  No log file found at {log_file}")
-            return
-
-        with open(log_file, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    self.events.append(SimEvent.from_dict(json.loads(line)))
-
-        print(f"  EventReplayer: loaded {len(self.events)} events from {log_file}")
-
-    def reset(self):
-        self._cursor = 0
-
-    def next(self) -> SimEvent | None:
-        """Step forward one event."""
-        if self._cursor >= len(self.events):
-            return None
-        event = self.events[self._cursor]
-        self._cursor += 1
-        return event
-
-    def peek(self) -> SimEvent | None:
-        if self._cursor >= len(self.events):
-            return None
-        return self.events[self._cursor]
-
-    def filter(self, event_type: str = None, network: str = None) -> list[SimEvent]:
-        """Return filtered subset — useful for per-network cascade analysis."""
-        result = self.events
-        if event_type:
-            result = [e for e in result if e.event_type == event_type]
-        if network:
-            result = [e for e in result if e.source_network == network]
-        return result
-
-    def print_cascade_chain(self, max_depth: int = 10):
-        """Print the cascade chain — events ordered by cascade_depth."""
-        chain = sorted(self.events, key=lambda e: (e.cascade_depth, e.timestamp))
-        print(f"\n  Cascade chain ({len(chain)} events):")
-        for e in chain[:max_depth]:
-            print(f"    depth={e.cascade_depth} | {e.source_network:8} | "
-                  f"{e.event_type:20} | node={e.node_id} | sev={e.severity:.2f}")
-        if len(chain) > max_depth:
-            print(f"    ... and {len(chain) - max_depth} more")
-
-    def summary_by_tick(self) -> dict:
-        """Group events by SIMULATION_TICK for per-tick analysis."""
-        ticks = defaultdict(list)
-        current_tick = 0
-        for e in self.events:
-            if e.event_type == "SIMULATION_TICK":
-                current_tick = e.metadata.get("tick", current_tick + 1)
-            else:
-                ticks[current_tick].append(e)
-        return dict(ticks)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# UNIT TESTS
-# ══════════════════════════════════════════════════════════════════════════════
-
-async def _test_basic_pubsub():
-    """Test: publish → receive, correct routing."""
-    print("\n[TEST 1] Basic pub/sub routing")
-    logger = EventLogger(f"{LOG_DIR}/test_basic.jsonl")
-    bus = EventBus(logger=logger)
-
-    power_q = bus.subscribe(["NODE_FAILED", "LOAD_SPIKE"], "power_agent")
-    water_q = bus.subscribe(["NODE_FAILED", "PRESSURE_DROP"], "water_agent")
-    road_q  = bus.subscribe(["ROUTE_BLOCKED"], "road_agent")
-
-    # publish a NODE_FAILED — should reach power + water, not road
-    bus.publish(SimEvent(
-        event_type="NODE_FAILED",
-        source_network="power",
-        node_id="PS-CMH",
-        severity=1.0,
-        metadata={"reason": "transformer_overload"}
-    ))
-
-    # publish a LOAD_SPIKE — only power should get it
-    bus.publish(SimEvent(
-        event_type="LOAD_SPIKE",
-        source_network="power",
-        node_id="PS-100FT",
-        severity=0.7
-    ))
-
-    # publish a ROUTE_BLOCKED — only road
-    bus.publish(SimEvent(
-        event_type="ROUTE_BLOCKED",
-        source_network="road",
-        node_id="road_node_42",
-        severity=0.5
-    ))
-
-    assert power_q.qsize() == 2, f"Power queue should have 2 events, got {power_q.qsize()}"
-    assert water_q.qsize() == 1, f"Water queue should have 1 event, got {water_q.qsize()}"
-    assert road_q.qsize()  == 1, f"Road queue should have 1 event, got {road_q.qsize()}"
-    print("  PASS — routing correct, no cross-contamination")
-
-    logger.close()
-
-
-async def _test_10k_no_drops():
-    """Key test: 10,000 events, zero dropped."""
-    print("\n[TEST 2] 10,000 events — zero drops")
-    logger = EventLogger(f"{LOG_DIR}/test_10k.jsonl")
-    bus = EventBus(logger=logger, max_queue_size=15000)
-
-    q = bus.subscribe(["NODE_FAILED"], "stress_subscriber")
-
-    t0 = time.time()
-    for i in range(10000):
-        bus.publish(SimEvent(
-            event_type="NODE_FAILED",
-            source_network="power",
-            node_id=f"node_{i}",
-            severity=0.5
-        ))
-    elapsed = time.time() - t0
-
-    assert bus.stats()["dropped"] == 0, f"Dropped events: {bus.stats()['dropped']}"
-    assert q.qsize() == 10000, f"Queue size: {q.qsize()}, expected 10000"
-    print(f"  PASS — 10,000 events published in {elapsed:.3f}s, zero dropped")
-    print(f"  Throughput: {int(10000/elapsed):,} events/sec")
-
-    logger.close()
-
-
-async def _test_event_schema_validation():
-    """Test: invalid event_type raises ValueError."""
-    print("\n[TEST 3] Schema validation")
-    try:
-        SimEvent(event_type="MADE_UP_TYPE", source_network="power", node_id="X")
-        assert False, "Should have raised ValueError"
-    except ValueError:
-        print("  PASS — invalid event_type rejected correctly")
-
-    try:
-        SimEvent(event_type="NODE_FAILED", source_network="power", node_id="X", severity=1.5)
-        assert False, "Should have raised ValueError"
-    except ValueError:
-        print("  PASS — invalid severity rejected correctly")
-
-
-async def _test_replay_tool():
-    """Test: event replay loads and steps correctly."""
-    print("\n[TEST 4] Event replay tool")
-    logger = EventLogger(f"{LOG_DIR}/test_replay.jsonl")
-    bus = EventBus(logger=logger)
-    bus.subscribe(["NODE_FAILED"], "dummy")
-
-    events_sent = []
-    for i in range(5):
-        e = SimEvent(
-            event_type="NODE_FAILED",
-            source_network="power",
-            node_id=f"PS-{i}",
-            severity=round(0.2 * i, 1),
-            cascade_depth=i
-        )
-        bus.publish(e)
-        events_sent.append(e.event_id)
-    logger.close()
-
-    replayer = EventReplayer(f"{LOG_DIR}/test_replay.jsonl")
-    assert len(replayer.events) == 5
-
-    # step through
-    for i in range(5):
-        e = replayer.next()
-        assert e is not None
-        assert e.event_id == events_sent[i]
-
-    assert replayer.next() is None  # exhausted
-
-    # filter test
-    failed = replayer.filter(event_type="NODE_FAILED", network="power")
-    assert len(failed) == 5
-
-    print("  PASS — replay loaded, stepped, and filtered correctly")
-    replayer.print_cascade_chain()
-
-
-async def run_all_tests():
-    print("=" * 55)
-    print("PHASE 2: Event Bus — Unit Tests")
-    print("=" * 55)
-    await _test_basic_pubsub()
-    await _test_10k_no_drops()
-    await _test_event_schema_validation()
-    await _test_replay_tool()
-
-    print("\n" + "=" * 55)
-    print("ALL TESTS PASSED — event bus ready for Phase 3 agents")
-    print("=" * 55)
-
-
-if __name__ == "__main__":
-    asyncio.run(run_all_tests())
+    def queue_depth(self, subscriber_id: str) -> dict:
+        """Return queue depths for a subscriber — useful for debugging backpressure."""
+        queues = self._subscribers.get(subscriber_id, {})
+        return {str(et): q.qsize() for et, q in queues.items()}
