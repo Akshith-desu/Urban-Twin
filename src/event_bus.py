@@ -163,6 +163,7 @@ class EventBus:
         Core routing loop. Reads from master queue, fans out to subscriber queues.
         Runs as a background asyncio task.
         """
+
         while True:
             try:
                 event = await asyncio.wait_for(
