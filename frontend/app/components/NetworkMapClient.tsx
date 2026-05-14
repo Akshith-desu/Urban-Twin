@@ -271,7 +271,7 @@ export default function NetworkMapClient({ networkData, focusNetwork, showAllNet
 
     if (feature.properties) {
       const p = feature.properties;
-      const tooltipTitle = p.name || `${(p.node_type || 'Asset').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} ${p.node_id || p.id}`;
+      const tooltipTitle = p.name || `${(p.node_type || 'Asset').replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())} ${p.node_id || p.id}`;
       const tooltipContent = `
         <div class="glass p-2 border-0 rounded shadow-none text-[10px] font-sans">
           <strong class="text-white">${tooltipTitle}</strong>
@@ -331,7 +331,7 @@ export default function NetworkMapClient({ networkData, focusNetwork, showAllNet
               </div>
               <h3 className="text-xl font-bold text-white font-display mb-1 tracking-tight">
                 {selectedNode.name || 
-                  `${(selectedNode.node_type || 'Asset').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} ${selectedNode.node_id || selectedNode.id}`}
+                  `${(selectedNode.node_type || 'Asset').replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())} ${selectedNode.node_id || selectedNode.id}`}
               </h3>
               <p className="text-[10px] text-slate-500 font-mono tracking-tighter">ID: {selectedNode.node_id || selectedNode.id}</p>
             </div>

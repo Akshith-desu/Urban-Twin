@@ -247,7 +247,7 @@ export default function SimulationPage() {
                         </div>
                         <div>
                           <div className="text-white font-bold">
-                            {node.name || `${(node.node_type || 'Asset').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} ${node.node_id}`}
+                            {node.name || `${(node.node_type || 'Asset').replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())} ${node.node_id}`}
                           </div>
                           <div className="font-mono text-[10px] text-slate-500 mt-0.5 tracking-tighter uppercase">{node.network} Network | ID: {node.node_id}</div>
                         </div>
