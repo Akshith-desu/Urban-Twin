@@ -373,8 +373,8 @@ if __name__ == "__main__":
 
     # Step 2
     # Step 2
-    G_power, pn, pe = build_power_graph(G_road)       # ← CORRECT
-    G_telecom, tn, te = build_telecom_graph(G_road)   # ← CORRECT
+    G_power, pn, pe = build_power_graph(G_road)
+    G_telecom, tn, te = build_telecom_graph(G_road)
 
     # Step 3
     G_water, wn, we = build_water_graph(G_road)
