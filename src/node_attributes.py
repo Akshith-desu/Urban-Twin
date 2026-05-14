@@ -360,7 +360,7 @@ if __name__ == "__main__":
     sys.path.insert(0, os.path.dirname(__file__))
 
     from graph_builder import build_road_graph
-    from power_telecom import build_power_graph, build_telecom_graph
+    from power import build_power_graph, build_telecom_graph
     from water_network import build_water_graph, build_dependency_edges
 
     print("=" * 60)
@@ -372,8 +372,9 @@ if __name__ == "__main__":
     G_road, buildings = build_road_graph()
 
     # Step 2
-    G_power, pn, pe = build_power_graph(buildings)
-    G_telecom, tn, te = build_telecom_graph()
+    # Step 2
+    G_power, pn, pe = build_power_graph(G_road)       # ← CORRECT
+    G_telecom, tn, te = build_telecom_graph(G_road)   # ← CORRECT
 
     # Step 3
     G_water, wn, we = build_water_graph(G_road)
