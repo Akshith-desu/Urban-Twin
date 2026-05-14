@@ -431,17 +431,13 @@ class PowerAgent:
     async def _cascade_substation_failure(self, sub_id: str, cascade_depth: int):
         """
         Substation fails (power.py cascade Step 1+2).
-        All its transformers try to reroute to backup substation.
-        Backup substation absorbs extra load → may overload.
-
-        Finds ALL transformers currently supplied by this substation — both
-        the original edge-based mapping AND any transformers previously
-        rerouted here from another failed substation.
         """
         sub_name = self._id_to_name.get(sub_id, sub_id)
+        logger.info(f"\n{'='*60}\nPOWER CASCADE START: Substation '{sub_name}' (ID: {sub_id}) failed!\n{'='*60}")
 
         # 1. Transformers from original edge mapping
         transformers_from_edges = set(self._sub_to_transformers.get(sub_id, []))
+        logger.info(f"  - Found {len(transformers_from_edges)} transformers from primary supply edges")
 
         # 2. Transformers rerouted here (substation_supplying changed at runtime)
         transformers_rerouted = set(

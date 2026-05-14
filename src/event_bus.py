@@ -55,16 +55,25 @@ class EventBus:
         self._event_logger = EventLogger(log_path)
         self._router_task: Optional[asyncio.Task] = None
         self._running = False
-
+        
         # stats
         self.published_count = 0
         self.routed_count = 0
         self.dropped_count = 0
 
+    def clear_subscriptions(self):
+        """Clear all subscribers and subscriptions. Useful for simulation reset."""
+        self._subscribers.clear()
+        self._subscriptions.clear()
+        logger.info("EventBus subscriptions cleared")
+
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
     async def start(self):
         """Start the router task. Call before any publish/subscribe."""
+        if self._running and self._router_task and not self._router_task.done():
+            return
+            
         self._running = True
         self._event_logger.open()
         self._router_task = asyncio.create_task(self._router(), name="event_router")
@@ -76,10 +85,13 @@ class EventBus:
         # sentinel to unblock router
         await self._master_queue.put(None)
         if self._router_task:
+            self._router_task.cancel()  # Explicitly cancel
             try:
-                await asyncio.wait_for(self._router_task, timeout=5.0)
-            except asyncio.TimeoutError:
-                self._router_task.cancel()
+                await asyncio.wait_for(self._router_task, timeout=2.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+            self._router_task = None
+        logger.info("EventBus stopped")
         self._event_logger.close()
         logger.info(f"EventBus stopped. published={self.published_count} "
                     f"routed={self.routed_count} dropped={self.dropped_count}")

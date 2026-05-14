@@ -36,12 +36,13 @@ import math
 import os
 import asyncio
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 from event_schema import (
     Event, EventType, Network, TICK_DURATION_MINUTES,
     node_failed, node_degraded, node_recovered,
     cell_tower_battery, cell_tower_failed,
+    cascade_triggered,
     user_fail_node, user_restore_node, sim_tick,
 )
 from event_bus import EventBus
@@ -56,6 +57,12 @@ HEALTH_FAIL_THRESHOLD               = 0.10
 HEALTH_DEGRADE_THRESHOLD            = 0.50
 FLOOD_GROUND_FAIL_PROB              = 0.50   # ground towers: 50% chance on flood
 # Wall towers are elevated/sealed — not directly vulnerable to ground flooding
+
+# ── water→telecom cross-dependency constants ───────────────────────────────────
+# Water-Telecom: Cooling systems dependency
+WATER_TELECOM_PROXIMITY_M      = 1200.0  # increased to ensure links in sparse areas
+COOLING_FAIL_HEALTH_HIT        = 0.15   # immediate health hit on cooling loss
+COOLING_FAIL_DRAIN_MULTIPLIER  = 2.5    # battery drains 2.5x faster without cooling
 
 
 class TelecomAgent:
@@ -81,6 +88,7 @@ class TelecomAgent:
 
     SUBSCRIBED_EVENTS = [
         EventType.FEEDER_LINE_DROPPED,
+        EventType.PUMP_STATION_FAIL,   # ← water→telecom cross-dependency
         EventType.USER_FAIL_NODE,
         EventType.USER_RESTORE_NODE,
         EventType.FLOOD_NODE,
@@ -90,7 +98,8 @@ class TelecomAgent:
 
     def __init__(self, bus: EventBus,
                  telecom_json_path: str = "graphs/telecom.json",
-                 power_json_path:   str = "graphs/power.json"):
+                 power_json_path:   str = "graphs/power.json",
+                 water_json_path:   str = "graphs/water.json"):
         self.bus  = bus
         self.tick = 0
         self.name = "telecom_agent"
@@ -137,6 +146,13 @@ class TelecomAgent:
         # ── wire towers → nearest transformer (mirrors water_agent pattern) ───
         self._transformer_to_towers: Dict[str, List[str]] = {}
         self._wire_towers_to_transformers(power_json_path)
+
+        # ── wire towers → nearby water pump stations ───────────────────────────
+        # pump_id → list of tower_ids within WATER_TELECOM_PROXIMITY_M
+        self._pump_to_towers: Dict[str, List[str]] = {}
+        # track which towers are in "cooling degraded" state from water failure
+        self._cooling_failed_towers: set = set()
+        self._wire_towers_to_pumps(water_json_path)
 
         # ── event queues ───────────────────────────────────────────────────────
         self._queues: Dict[EventType, asyncio.Queue] = {}
@@ -241,6 +257,85 @@ class TelecomAgent:
         )
 
     # ══════════════════════════════════════════════════════════════════════════
+    # TOWER → WATER PUMP WIRING
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _wire_towers_to_pumps(self, water_json_path: str):
+        """
+        Load water.json and build a spatial proximity map:
+          pump_id → [tower_ids within WATER_TELECOM_PROXIMITY_M]
+
+        Telecom towers with cooling systems (exchanges, data_centers, and
+        ground-mounted masts) depend on water-district pressure for HVAC.
+        When the nearest pump station fails, these towers experience
+        accelerated battery drain (COOLING_FAIL_DRAIN_MULTIPLIER) and an
+        immediate health hit (COOLING_FAIL_HEALTH_HIT).
+        """
+        if not os.path.exists(water_json_path):
+            logger.warning(
+                f"water.json not found at {water_json_path} — "
+                f"towers will not respond to pump failures"
+            )
+            return
+
+        with open(water_json_path) as wf:
+            water_raw = json.load(wf)
+
+        # collect pump station nodes that have coordinates
+        pumps = [
+            n for n in water_raw["nodes"]
+            if n.get("node_type") == "pump_station"
+            and n.get("x") is not None
+            and n.get("y") is not None
+        ]
+
+        if not pumps:
+            logger.warning("No pump_station nodes with x/y found in water.json")
+            return
+
+        # project tower lat/lon to UTM for distance comparison
+        tower_coords: Dict[str, Tuple[float, float]] = {}
+        for nid, tower in self.nodes.items():
+            lat = tower.get("latitude")
+            lon = tower.get("longitude")
+            if lat is None or lon is None:
+                continue
+            try:
+                from pyproj import Transformer as ProjTransformer
+                proj = ProjTransformer.from_crs(
+                    "EPSG:4326", "EPSG:32643", always_xy=True
+                )
+                tx, ty = proj.transform(lon, lat)
+            except Exception:
+                tx = lon * 111320 * math.cos(math.radians(lat))
+                ty = lat * 111320
+            tower_coords[nid] = (tx, ty)
+
+        linked = 0
+        for pump in pumps:
+            pid  = str(pump["node_id"])
+            px, py = pump["x"], pump["y"]
+            nearby = []
+            for nid, (tx, ty) in tower_coords.items():
+                d = math.sqrt((tx - px) ** 2 + (ty - py) ** 2)
+                if d <= WATER_TELECOM_PROXIMITY_M:
+                    nearby.append(nid)
+                    logger.info(
+                        f"  Tower {nid} ({self.nodes[nid].get('name')}) "
+                        f"← pump {pid} ({pump.get('name')}) [{d:.0f} m]"
+                    )
+            if nearby:
+                self._pump_to_towers[pid] = nearby
+                linked += len(nearby)
+
+        logger.info(
+            f"Water→Telecom wiring: {linked} tower-pump links across "
+            f"{len(self._pump_to_towers)} pumps."
+        )
+        if linked == 0:
+            logger.warning("NO WATER-TELECOM LINKS FOUND. Check coordinates.")
+
+    # ══════════════════════════════════════════════════════════════════════════
     # LIFECYCLE
     # ══════════════════════════════════════════════════════════════════════════
 
@@ -277,6 +372,9 @@ class TelecomAgent:
         elif event.event_type == EventType.FEEDER_LINE_DROPPED:
             await self._handle_feeder_dropped(event)
 
+        elif event.event_type == EventType.PUMP_STATION_FAIL:
+            await self._handle_water_pump_fail(event)
+
         elif event.event_type == EventType.USER_FAIL_NODE:
             if event.source_network == Network.TELECOM:
                 await self._fail_node(event.node_id, reason="user_triggered",
@@ -305,6 +403,76 @@ class TelecomAgent:
         elif event.event_type == EventType.FLOOD_CLEARED:
             if event.node_id in self.nodes:
                 self.nodes[event.node_id]["flood_risk"] = False
+
+    async def _handle_water_pump_fail(self, event: Event):
+        """
+        WaterAgent emitted PUMP_STATION_FAIL.
+        event.node_id = pump_station node_id that failed.
+
+        Affected telecom towers (within WATER_TELECOM_PROXIMITY_M) lose cooling:
+          - battery drain rate is multiplied by COOLING_FAIL_DRAIN_MULTIPLIER
+          - immediate health deduction of COOLING_FAIL_HEALTH_HIT
+          - CASCADE_TRIGGERED event emitted for each affected tower
+        """
+        pump_id   = event.node_id
+        pump_name = event.metadata.get("name", pump_id)
+        depth     = event.cascade_depth + 1
+
+        affected_towers = self._pump_to_towers.get(pump_id, [])
+        if not affected_towers:
+            logger.debug(
+                f"[tick {self.tick}] Pump {pump_id} failed — "
+                f"no telecom towers in proximity ({WATER_TELECOM_PROXIMITY_M} m)"
+            )
+            return
+
+        logger.info(
+            f"[tick {self.tick}] Water pump '{pump_name}' ({pump_id}) failed → "
+            f"cooling loss for {len(affected_towers)} telecom tower(s): {affected_towers}"
+        )
+
+        for tower_id in affected_towers:
+            tower = self.nodes.get(tower_id)
+            if tower is None:
+                continue
+            if tower.get("operational_status") == "failed":
+                continue
+            if tower_id in self._cooling_failed_towers:
+                continue  # already degraded by an earlier pump failure
+
+            # Mark cooling as failed — battery drain step will pick this up
+            self._cooling_failed_towers.add(tower_id)
+            tower["cooling_ok"] = False
+
+            # Immediate health deduction
+            old_health = tower.get("health", 1.0)
+            new_health = max(0.0, old_health - COOLING_FAIL_HEALTH_HIT)
+            tower["health"] = round(new_health, 4)
+
+            logger.info(
+                f"[tick {self.tick}] Tower {tower_id} ({tower.get('name')}) "
+                f"cooling failed — health {old_health:.2f} → {new_health:.2f}, "
+                f"battery drain ×{COOLING_FAIL_DRAIN_MULTIPLIER}"
+            )
+
+            # Emit cross-network cascade arc for the frontend
+            await self._publish(cascade_triggered(
+                source_network=Network.WATER,
+                source_node=pump_id,
+                target_network=Network.TELECOM,
+                target_node=tower_id,
+                tick=self.tick,
+                depth=depth,
+                reason="pump_fail_cooling_loss",
+            ))
+
+            # If health dropped below degrade threshold emit NODE_DEGRADED
+            if new_health <= HEALTH_DEGRADE_THRESHOLD and old_health > HEALTH_DEGRADE_THRESHOLD:
+                tower["operational_status"] = "degraded"
+                await self._publish(node_degraded(
+                    Network.TELECOM, tower_id, self.tick,
+                    severity=round(1.0 - new_health, 2)
+                ))
 
     async def _handle_feeder_dropped(self, event: Event):
         """
@@ -376,13 +544,14 @@ class TelecomAgent:
         Each off-grid tower drains its battery every tick:
           drain_kwh = power_consumption_kw × (TICK_DURATION_MINUTES / 60)
 
+        If cooling has failed (water pump down), drain is multiplied by
+        COOLING_FAIL_DRAIN_MULTIPLIER (towers overheat faster).
+
         Emits CELL_TOWER_BATTERY every tick while on battery so dashboard can
         show live battery bar.
 
         Emits CELL_TOWER_FAILED when battery_remaining_kwh reaches 0.
         """
-        drain_kwh = None  # computed per tower (power varies by type)
-
         for nid, tower in self.nodes.items():
             if tower.get("on_grid_power", True):
                 continue
@@ -395,7 +564,13 @@ class TelecomAgent:
 
             remaining = battery.get("remaining_kwh", 0.0)
             power_kw  = tower.get("power_consumption_kw", 4.0)
-            drain     = power_kw * (TICK_DURATION_MINUTES / 60.0)
+            # cooling multiplier: towers without water-cooling drain faster
+            cooling_mult = (
+                COOLING_FAIL_DRAIN_MULTIPLIER
+                if nid in self._cooling_failed_towers
+                else 1.0
+            )
+            drain     = power_kw * (TICK_DURATION_MINUTES / 60.0) * cooling_mult
             new_remaining = max(0.0, round(remaining - drain, 4))
             battery["remaining_kwh"] = new_remaining
 
