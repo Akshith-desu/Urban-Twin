@@ -78,6 +78,7 @@ class EventType(str, Enum):
 class Network(str, Enum):
     POWER   = "power"
     WATER   = "water"
+    ROAD    = "road"
     TELECOM = "telecom"
     SYSTEM  = "system"   # orchestrator / simulation engine
 
@@ -102,7 +103,6 @@ class Event:
     event_type:     EventType
     source_network: Network
     node_id:        str
-    node_name:      Optional[str]    = None
     severity:       float            = 1.0
     tick:           int              = 0
     affected_nodes: List[str]        = field(default_factory=list)
@@ -121,7 +121,6 @@ class Event:
             "event_type":     self.event_type.value,
             "source_network": self.source_network.value,
             "node_id":        self.node_id,
-            "node_name":      self.node_name,
             "severity":       self.severity,
             "affected_nodes": self.affected_nodes,
             "cascade_depth":  self.cascade_depth,
@@ -134,7 +133,6 @@ class Event:
             event_type      = EventType(d["event_type"]),
             source_network  = Network(d["source_network"]),
             node_id         = d["node_id"],
-            node_name       = d.get("node_name"),
             severity        = d.get("severity", 1.0),
             tick            = d.get("tick", 0),
             affected_nodes  = d.get("affected_nodes", []),
@@ -155,24 +153,24 @@ class Event:
 # ── convenience constructors ───────────────────────────────────────────────────
 
 def node_failed(network: Network, node_id: str, tick: int,
-                node_name: Optional[str] = None, cascade_depth: int = 0, **meta) -> Event:
-    return Event(EventType.NODE_FAILED, network, node_id, node_name=node_name,
+                cascade_depth: int = 0, **meta) -> Event:
+    return Event(EventType.NODE_FAILED, network, node_id,
                  severity=1.0, tick=tick,
                  cascade_depth=cascade_depth, metadata=meta)
 
 def node_degraded(network: Network, node_id: str, tick: int,
-                  severity: float, node_name: Optional[str] = None, **meta) -> Event:
-    return Event(EventType.NODE_DEGRADED, network, node_id, node_name=node_name,
+                  severity: float, **meta) -> Event:
+    return Event(EventType.NODE_DEGRADED, network, node_id,
                  severity=severity, tick=tick, metadata=meta)
 
-def node_recovered(network: Network, node_id: str, tick: int, node_name: Optional[str] = None, **meta) -> Event:
-    return Event(EventType.NODE_RECOVERED, network, node_id, node_name=node_name,
+def node_recovered(network: Network, node_id: str, tick: int, **meta) -> Event:
+    return Event(EventType.NODE_RECOVERED, network, node_id,
                  severity=0.0, tick=tick, metadata=meta)
 
 def cascade_triggered(source_network: Network, source_node: str,
                       target_network: Network, target_node: str,
-                      tick: int, depth: int, source_name: Optional[str] = None, **meta) -> Event:
-    return Event(EventType.CASCADE_TRIGGERED, source_network, source_node, node_name=source_name,
+                      tick: int, depth: int, **meta) -> Event:
+    return Event(EventType.CASCADE_TRIGGERED, source_network, source_node,
                  severity=1.0, tick=tick,
                  affected_nodes=[target_node],
                  cascade_depth=depth,
