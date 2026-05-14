@@ -1,6 +1,6 @@
 """
 Urban Twin - FastAPI Bridge Server
-Exposes graph data, live WebSocket events, flood injection and Monte Carlo.
+Exposes graph data, live WebSocket events, and interfaces with Simulation Agents.
 Run from src/: uvicorn api_server:app --reload --port 8000
 """
 
@@ -8,12 +8,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import geopandas as gpd
-import json, os, random, asyncio, math, time
+import json, os, random, asyncio, math, time, uuid
 from typing import Dict, List, Optional, Set
 from pathlib import Path
 import numpy as np
 from event_bus import EventBus
-from event_schema import EventType
+from event_schema import EventType, Network, Event
 from orchestrator import SimulationOrchestrator
 
 app = FastAPI(title="Urban Twin API", version="1.0.0")
@@ -29,6 +29,8 @@ app.add_middleware(
 BASE_DIR   = Path(__file__).parent
 GRAPHS_DIR = BASE_DIR / "graphs"
 DATA_DIR   = BASE_DIR / "data"
+
+# ROAD REMOVED entirely per user request
 NETWORKS   = ["power", "water", "telecom"]
 
 NETWORK_COLORS = {
@@ -69,14 +71,17 @@ class WSManager:
 
 manager = WSManager()
 
+
+# ── WebSocket Endpoint ────────────────────────────────────────────────────────
+
 @app.websocket("/ws/events")
-async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+async def ws_events(ws: WebSocket):
+    await manager.connect(ws)
     try:
         while True:
-            await websocket.receive_text()
+            await ws.receive_text()
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        manager.disconnect(ws)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -125,7 +130,6 @@ def load_network(network: str) -> dict:
         try:
             with open(json_path) as f:
                 raw = json.load(f)
-                # Map by node_id (stringified)
                 json_data = {str(n.get("node_id", "")): n for n in raw.get("nodes", [])}
         except Exception as e:
             print(f"  Error loading enrichment JSON {json_path}: {e}")
@@ -134,16 +138,13 @@ def load_network(network: str) -> dict:
         if gdf is None or len(gdf) == 0:
             return {"type": "FeatureCollection", "features": []}
         fc = json.loads(gdf.to_json())
-        
         if is_nodes:
             for f in fc.get("features", []):
                 props = f.get("properties", {})
                 nid = str(props.get("node_id") or props.get("id") or "")
                 if nid in json_data:
-                    # Merge JSON info into properties
                     enriched = {**json_data[nid], **props}
                     f["properties"] = enriched
-                    
         return sanitize_fc(fc)
 
     nodes_fc = to_fc(nodes_gdf, is_nodes=True)
@@ -160,7 +161,7 @@ def load_network(network: str) -> dict:
 
 @app.on_event("startup")
 async def startup():
-    print("Urban Twin API starting…")
+    print("Urban Twin API starting\u2026")
     for net in NETWORKS:
         try:
             _graph_cache[net] = load_network(net)
@@ -174,21 +175,35 @@ async def startup():
         with open(dep_path) as f:
             _dep_cache.extend(json.load(f))
         print(f"  Dependencies: {len(_dep_cache)}")
-    
-    # Start the simulation orchestrator
+
     await orch.start()
     print("Orchestrator started.")
 
-    # Bridge EventBus to WebSocket Manager
+    # MANDATORY: Subscribe the bridge to the bus so it gets a queue!
+    bus.subscribe("api_server_ws", [t for t in EventType])
+
     async def bridge_to_ws():
         print("WebSocket Bridge: Waiting for events...")
         async for event in bus.get_events("api_server_ws", [t for t in EventType]):
-            print(f"WebSocket Bridge: Broadcasting {event.event_type} for {event.node_id}")
+            print(f"DEBUG: Bridge received {event.event_type} from {event.source_network.value} for {event.node_id}")
+            
+            # Only broadcast events for networks we are tracking (power, water, telecom)
+            if event.source_network.value not in NETWORKS and event.source_network.value != "system":
+                print(f"DEBUG: Bridge FILTERED OUT {event.source_network.value} (not in {NETWORKS})")
+                continue
+            
+            # For cascade events, also verify the target network is one we track
+            if event.event_type == EventType.CASCADE_TRIGGERED:
+                target_net = event.metadata.get("target_network")
+                if target_net not in NETWORKS:
+                    print(f"DEBUG: Bridge FILTERED CASCADE to {target_net}")
+                    continue
+
+            print(f"DEBUG: Bridge BROADCASTING {event.event_type} for {event.node_id}")
             await manager.broadcast({"type": "event", "data": event.to_dict()})
-    
+
     asyncio.create_task(bridge_to_ws())
     print("Bridge to WS active.")
-    
     print("Startup complete.")
 
 
@@ -223,7 +238,7 @@ async def get_combined():
 
 @app.get("/api/dependencies")
 async def get_deps():
-    return JSONResponse(_dep_cache)
+    return JSONResponse([d for d in _dep_cache if d.get("to_network") != "road"])
 
 @app.get("/api/events/history")
 async def get_history():
@@ -245,77 +260,6 @@ async def get_stats():
     })
 
 
-# ── Monte Carlo ───────────────────────────────────────────────────────────────
-
-@app.post("/api/simulation/montecarlo")
-async def montecarlo(body: dict):
-    n_runs   = min(int(body.get("n_runs", 200)), 500)
-    scenario = body.get("scenario", "flood")
-    target   = body.get("target_network", "all")
-
-    networks = NETWORKS if target == "all" else [target]
-    nodes = []
-    for net in networks:
-        for f in _graph_cache.get(net, {}).get("nodes", {}).get("features", []):
-            p = f.get("properties", {}) or {}
-            g = f.get("geometry", {})
-            if g.get("type") == "Point":
-                c = g["coordinates"]
-                nodes.append({
-                    "id": p.get("node_id", str(id(f))),
-                    "name": p.get("name"),
-                    "node_type": p.get("node_type"),
-                    "lon": c[0], "lat": c[1],
-                    "network": net,
-                    "criticality": float(p.get("criticality") or 1.0),
-                    "flood_risk": bool(p.get("flood_risk", False)),
-                })
-
-    if not nodes:
-        return JSONResponse({"results": [], "total_runs": 0})
-
-    lats = [n["lat"] for n in nodes]
-    lons = [n["lon"] for n in nodes]
-    clat = sum(lats) / len(lats)
-    clon = sum(lons) / len(lons)
-    lr   = max(lats) - min(lats)
-    lonr = max(lons) - min(lons)
-
-    counts = {n["id"]: 0 for n in nodes}
-    for _ in range(n_runs):
-        if scenario == "flood":
-            flat = clat + random.uniform(-lr * 0.45, lr * 0.45)
-            flon = clon + random.uniform(-lonr * 0.45, lonr * 0.45)
-            frad = random.uniform(0.003, 0.009)
-            for node in nodes:
-                d = math.hypot(node["lat"] - flat, node["lon"] - flon)
-                if d < frad:
-                    prob = 1.0 - d / frad * 0.5
-                    if node["flood_risk"]:
-                        prob = min(1.0, prob * 1.3)
-                    if random.random() < prob:
-                        counts[node["id"]] += 1
-        else:
-            for node in random.sample(nodes, max(1, len(nodes) // 10)):
-                counts[node["id"]] += 1
-
-    results = []
-    for node in nodes:
-        prob = counts[node["id"]] / n_runs
-        if prob > 0.01:
-            results.append({
-                "node_id": node["id"], "network": node["network"],
-                "node_type": node.get("node_type"),
-                "name": node["name"],
-                "lat": node["lat"], "lon": node["lon"],
-                "failure_probability": round(prob, 4),
-                "criticality": node["criticality"],
-            })
-    results.sort(key=lambda x: x["failure_probability"], reverse=True)
-    return JSONResponse({"results": results, "total_runs": n_runs,
-                         "scenario": scenario, "most_vulnerable": results[:10]})
-
-
 # ── Flood Injection ───────────────────────────────────────────────────────────
 
 @app.post("/api/simulation/flood")
@@ -323,8 +267,7 @@ async def inject_flood(body: dict):
     lat = float(body.get("lat", 12.9762))
     lon = float(body.get("lon", 77.6265))
     radius_m = float(body.get("radius_m", 500))
-    
-    # Identify nodes in the flood zone
+
     rad_deg = radius_m / 111_000
     affected_nodes = []
     node_names = {}
@@ -339,24 +282,20 @@ async def inject_flood(body: dict):
                     nid = props.get("node_id")
                     if nid:
                         affected_nodes.append(nid)
-                        # Construct name similarly to agent
                         n_type = str(props.get("node_type", "Node")).replace("_", " ").title()
                         n_name = props.get("name")
                         display_name = f"{n_type} {n_name}" if n_name and str(n_name) != str(nid) else f"{n_type} ({nid})"
                         node_names[nid] = display_name
 
     print(f"Injecting flood at {lat}, {lon} with radius {radius_m}m. Affected nodes: {len(affected_nodes)}")
-    # Inject into orchestrator
-    asyncio.create_task(orch.inject_scenario("flood", {"nodes": affected_nodes, "names": node_names}))
-    
-    # Also run a few steps automatically
+    await orch.inject_scenario("flood", {"nodes": affected_nodes, "names": node_names})
+
     async def auto_step():
         for _ in range(5):
             await orch.run_step()
             await asyncio.sleep(1.0)
-            
+
     asyncio.create_task(auto_step())
-    
     return {"status": "injected", "lat": lat, "lon": lon, "radius_m": radius_m, "affected_count": len(affected_nodes)}
 
 
@@ -365,7 +304,7 @@ async def recover_nodes(body: dict):
     lat = float(body.get("lat", 12.9762))
     lon = float(body.get("lon", 77.6265))
     radius_m = float(body.get("radius_m", 500))
-    
+
     rad_deg = radius_m / 111_000
     affected_nodes = []
     node_names = {}
@@ -382,115 +321,11 @@ async def recover_nodes(body: dict):
                         affected_nodes.append(nid)
                         node_names[nid] = props.get("name") or nid
 
-    # Inject into orchestrator
-    asyncio.create_task(orch.inject_scenario("recovery", {"nodes": affected_nodes, "names": node_names}))
-    
+    await orch.inject_scenario("recovery", {"nodes": affected_nodes, "names": node_names})
     return {"status": "recovery_initiated", "affected_count": len(affected_nodes)}
 
 
-
-
-@app.get("/api/export/kepler")
-async def export_kepler():
-    # Combine all networks and dependencies into a Kepler-compatible JSON
-    datasets = []
-    
-    # 1. Network Nodes & Edges
-    features = []
-    for net in NETWORKS:
-        d = _graph_cache.get(net, {})
-        for f in d.get("nodes", {}).get("features", []):
-            f["properties"]["_network"] = net
-            features.append(f)
-        for f in d.get("edges", {}).get("features", []):
-            f["properties"]["_network"] = net
-            features.append(f)
-            
-    datasets.append({
-        "info": {"id": "infrastructure", "label": "Urban Infrastructure"},
-        "data": {
-            "type": "FeatureCollection",
-            "features": features
-        }
-    })
-    
-    # 2. Dependencies as Arcs
-    dep_features = []
-    for dep in _dep_cache:
-        # Find coordinates
-        from_coords = None
-        to_coords = None
-        for net in NETWORKS:
-            for f in _graph_cache[net]["nodes"]["features"]:
-                if f["properties"].get("node_id") == dep["from_node"]:
-                    from_coords = f["geometry"]["coordinates"]
-                if f["properties"].get("node_id") == dep["to_node"]:
-                    to_coords = f["geometry"]["coordinates"]
-        
-        if from_coords and to_coords:
-            dep_features.append({
-                "type": "Feature",
-                "geometry": {
-                    "type": "LineString",
-                    "coordinates": [from_coords, to_coords]
-                },
-                "properties": dep
-            })
-            
-    datasets.append({
-        "info": {"id": "dependencies", "label": "Inter-dependencies"},
-        "data": {
-            "type": "FeatureCollection",
-            "features": dep_features
-        }
-    })
-
-    return JSONResponse({
-        "version": "v1",
-        "config": {
-            "visState": {
-                "layers": [
-                    {
-                        "id": "infra-nodes",
-                        "type": "geojson",
-                        "config": {
-                            "dataId": "infrastructure",
-                            "label": "Infrastructure Nodes",
-                            "color": [18, 147, 154],
-                            "columns": {"geojson": "geometry"},
-                            "isVisible": True,
-                            "visConfig": {"radius": 10, "opacity": 0.8}
-                        }
-                    },
-                    {
-                        "id": "dep-arcs",
-                        "type": "arc",
-                        "config": {
-                            "dataId": "dependencies",
-                            "label": "Dependency Arcs",
-                            "color": [255, 153, 31],
-                            "columns": {"geojson": "geometry"},
-                            "isVisible": True,
-                            "visConfig": {"thickness": 2, "opacity": 0.6}
-                        }
-                    }
-                ]
-            }
-        },
-        "datasets": datasets
-    })
-
-
-# ── WebSocket ─────────────────────────────────────────────────────────────────
-
-@app.websocket("/ws/events")
-async def ws_events(ws: WebSocket):
-    await manager.connect(ws)
-    try:
-        while True:
-            await ws.receive_text()   # keep-alive ping
-    except WebSocketDisconnect:
-        manager.disconnect(ws)
+# ── Manual Failure / Recovery ─────────────────────────────────────────────────
 
 @app.post("/api/simulation/fail-node")
 async def fail_node(body: dict):
@@ -498,37 +333,73 @@ async def fail_node(body: dict):
     print(f"Manual fail-node request received for: {node_id}")
     if not node_id:
         raise HTTPException(status_code=400, detail="node_id is required")
-    
-    # Try to find name in cache
-    display_name = "Asset " + str(node_id)
+
+    # Find name and network from cache
+    display_name = "Asset " + node_id
+    source_network = Network.SYSTEM
     for net in NETWORKS:
         for f in _graph_cache.get(net, {}).get("nodes", {}).get("features", []):
             props = f.get("properties", {})
-            if str(props.get("node_id")) == str(node_id):
+            if str(props.get("node_id", "")) == node_id or str(props.get("id", "")) == node_id:
                 n_type = str(props.get("node_type", "Node")).replace("_", " ").title()
                 n_name = props.get("name")
-                display_name = f"{n_type} {n_name}" if n_name and str(n_name) != str(node_id) else f"{n_type} ({node_id})"
+                display_name = f"{n_type} {n_name}" if n_name and str(n_name) != node_id else f"{n_type} ({node_id})"
+                source_network = Network(net)
                 break
-    
+
+    # 1. Directly broadcast initial failure for immediate UI feedback
+    direct_event = {
+        "event_id": str(uuid.uuid4())[:8],
+        "timestamp": time.time(),
+        "tick": orch.current_tick,
+        "event_type": "NODE_FAILED",
+        "source_network": source_network.value,
+        "node_id": node_id,
+        "node_name": display_name,
+        "severity": 1.0,
+        "affected_nodes": [],
+        "cascade_depth": 0,
+        "metadata": {"reason": "manual_injection"}
+    }
+    await manager.broadcast({"type": "event", "data": direct_event})
+
+    # 2. Inject into agent-based simulation for cascading failures
+    # Agents handle the dependency logic defined in their files.
     await orch.inject_scenario("flood", {"nodes": [node_id], "names": {node_id: display_name}})
-    
-    # Step simulation several times to propagate effects
-    async def run_multiple_steps():
+
+    async def run_steps():
+        # Run multiple ticks to allow cascades to propagate through agents
         for _ in range(5):
             await orch.run_step()
             await asyncio.sleep(0.5)
-            
-    asyncio.create_task(run_multiple_steps())
-    
+
+    asyncio.create_task(run_steps())
     return {"status": "node_failed", "node_id": node_id, "name": display_name}
+
 
 @app.post("/api/simulation/recover-node")
 async def recover_node(body: dict):
     node_id = str(body.get("node_id", ""))
     if not node_id:
         raise HTTPException(status_code=400, detail="node_id is required")
-        
+
+    # 1. Direct visual update
+    direct_event = {
+        "event_id": str(uuid.uuid4())[:8],
+        "timestamp": time.time(),
+        "tick": orch.current_tick,
+        "event_type": "NODE_RECOVERED",
+        "source_network": "system",
+        "node_id": node_id,
+        "node_name": None,
+        "severity": 0.0,
+        "affected_nodes": [],
+        "cascade_depth": 0,
+        "metadata": {"reason": "manual_recovery"}
+    }
+    await manager.broadcast({"type": "event", "data": direct_event})
+
+    # 2. Inject recovery into simulation
     await orch.inject_scenario("recovery", {"nodes": [node_id], "names": {}})
     asyncio.create_task(orch.run_step())
-    
     return {"status": "node_recovered", "node_id": node_id}

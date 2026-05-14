@@ -74,8 +74,12 @@ class BaseAgent:
             try:
                 with open(dep_path) as f:
                     all_deps = json.load(f)
-                    self.dependencies = [d for d in all_deps if d["from_network"] == self.network.value]
-                logger.info(f"Agent {self.name}: Loaded {len(self.dependencies)} outgoing dependencies")
+                    # Filter for this agent's outgoing network AND exclude road network targets
+                    self.dependencies = [
+                        d for d in all_deps 
+                        if d["from_network"] == self.network.value and d.get("to_network") != "road"
+                    ]
+                logger.info(f"Agent {self.name}: Loaded {len(self.dependencies)} outgoing dependencies (road excluded)")
             except Exception as e:
                 logger.error(f"Agent {self.name} failed to load dependencies: {e}")
 
@@ -107,6 +111,7 @@ class BaseAgent:
                     "is_failed": False,
                     "metadata": {}
                 }
+            print(f"Agent {self.name}: Initialised {len(self.state)} nodes in state.")
 
     def get_subscribed_topics(self) -> List[EventType]:
         """Return list of EventTypes this agent cares about. Override in subclasses."""
@@ -141,17 +146,23 @@ class BaseAgent:
             # Check if this node belongs to us
             nid = str(event.node_id)
             if nid in self.state:
+                print(f"DEBUG: Agent {self.name} matching FLOOD_NODE for {nid}")
                 await self.handle_failure(event, node_id=nid)
+            else:
+                # Silently ignore or debug log
+                pass
         
         elif event.event_type == EventType.CASCADE_TRIGGERED:
             # Check if this cascade is targeting US
             meta = event.metadata or {}
             target_net = meta.get("target_network")
-            target_node = meta.get("target_node")
+            target_node = str(meta.get("target_node"))
             
             if target_net == self.network.value and target_node in self.state:
-                logger.warning(f"Agent {self.name}: Received CASCADE failure for {target_node} from {event.source_network}")
+                print(f"DEBUG: Agent {self.name} matching CASCADE for {target_node} from {event.source_network}")
                 await self.handle_failure(event, node_id=target_node)
+            elif target_net == self.network.value:
+                print(f"DEBUG: Agent {self.name} MISSED CASCADE target {target_node} (not in state)")
         
         elif event.event_type == EventType.NODE_RECOVERED:
             nid = str(event.node_id)

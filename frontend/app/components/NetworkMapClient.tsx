@@ -372,9 +372,10 @@ export default function NetworkMapClient({ networkData, focusNetwork, showAllNet
                 <div className="flex gap-2">
                   <button 
                     onClick={async () => {
-                      const nid = selectedNode.node_id || selectedNode.id;
-                      console.log("Triggering failure for:", nid);
-                      const resp = await fetch("http://localhost:8000/api/simulation/fail-node", {
+                      const nid = String(selectedNode.node_id ?? selectedNode.id ?? "");
+                      console.log("Triggering failure for:", nid, "| Full node props:", selectedNode);
+                      if (!nid) { alert("No node ID found on this node!"); return; }
+                      const resp = await fetch("http://127.0.0.1:8000/api/simulation/fail-node", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ node_id: nid })
@@ -391,9 +392,9 @@ export default function NetworkMapClient({ networkData, focusNetwork, showAllNet
                   </button>
                   <button 
                     onClick={async () => {
-                      const nid = selectedNode.node_id || selectedNode.id;
+                      const nid = String(selectedNode.node_id ?? selectedNode.id ?? "");
                       console.log("Restoring node:", nid);
-                      const resp = await fetch("http://localhost:8000/api/simulation/recover-node", {
+                      const resp = await fetch("http://127.0.0.1:8000/api/simulation/recover-node", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ node_id: nid })
