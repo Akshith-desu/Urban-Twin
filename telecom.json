@@ -1,0 +1,729 @@
+{
+  "metadata": {
+    "total_towers": 15,
+    "rss_threshold_dbm": -110.0
+  },
+  "nodes": [
+    {
+      "node_id": 1,
+      "name": "Ground Tower 1",
+      "tower_type": "ground",
+      "latitude": 12.9733,
+      "longitude": 77.6225,
+      "health": 1.0,
+      "operational_status": "normal",
+      "power_consumption_kw": 5.73,
+      "battery": {
+        "capacity_kwh": 23.49,
+        "remaining_kwh": 23.49,
+        "backup_hours": 4.1,
+        "on_battery": false
+      },
+      "providers": [
+        {
+          "operator": "Jio",
+          "technology": "4G",
+          "frequency_mhz": 1800,
+          "transmit_power_dbm": 41.97,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 69.46,
+          "coverage_radius_m": 790.18,
+          "rss_dbm": -110.0
+        }
+      ]
+    },
+    {
+      "node_id": 2,
+      "name": "Ground Tower 2",
+      "tower_type": "ground",
+      "latitude": 12.975,
+      "longitude": 77.6082,
+      "health": 1.0,
+      "operational_status": "normal",
+      "power_consumption_kw": 5.52,
+      "battery": {
+        "capacity_kwh": 43.61,
+        "remaining_kwh": 43.61,
+        "backup_hours": 7.9,
+        "on_battery": false
+      },
+      "providers": [
+        {
+          "operator": "Airtel",
+          "technology": "2G",
+          "frequency_mhz": 900,
+          "transmit_power_dbm": 40.14,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 74.28,
+          "coverage_radius_m": 734.95,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Airtel",
+          "technology": "4G",
+          "frequency_mhz": 1800,
+          "transmit_power_dbm": 44.53,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 71.21,
+          "coverage_radius_m": 867.42,
+          "rss_dbm": -110.0
+        }
+      ]
+    },
+    {
+      "node_id": 3,
+      "name": "Ground Tower 3",
+      "tower_type": "ground",
+      "latitude": 12.9757,
+      "longitude": 77.6083,
+      "health": 1.0,
+      "operational_status": "normal",
+      "power_consumption_kw": 5.58,
+      "battery": {
+        "capacity_kwh": 34.6,
+        "remaining_kwh": 34.6,
+        "backup_hours": 6.2,
+        "on_battery": false
+      },
+      "providers": [
+        {
+          "operator": "Airtel",
+          "technology": "2G",
+          "frequency_mhz": 900,
+          "transmit_power_dbm": 45.02,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 87.76,
+          "coverage_radius_m": 273.06,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Airtel",
+          "technology": "4G",
+          "frequency_mhz": 1800,
+          "transmit_power_dbm": 45.81,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 68.16,
+          "coverage_radius_m": 1428.0,
+          "rss_dbm": -110.0
+        }
+      ]
+    },
+    {
+      "node_id": 4,
+      "name": "Ground Tower 4",
+      "tower_type": "ground",
+      "latitude": 12.9671,
+      "longitude": 77.6267,
+      "health": 1.0,
+      "operational_status": "normal",
+      "power_consumption_kw": 3.85,
+      "battery": {
+        "capacity_kwh": 20.02,
+        "remaining_kwh": 20.02,
+        "backup_hours": 5.2,
+        "on_battery": false
+      },
+      "providers": [
+        {
+          "operator": "Vi",
+          "technology": "2G",
+          "frequency_mhz": 900,
+          "transmit_power_dbm": 41.75,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 88.07,
+          "coverage_radius_m": 180.82,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Vi",
+          "technology": "4G",
+          "frequency_mhz": 2500,
+          "transmit_power_dbm": 43.93,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 71.98,
+          "coverage_radius_m": 533.41,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Airtel",
+          "technology": "4G",
+          "frequency_mhz": 1800,
+          "transmit_power_dbm": 45.72,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 64.5,
+          "coverage_radius_m": 2153.91,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Airtel",
+          "technology": "5G",
+          "frequency_mhz": 3500,
+          "transmit_power_dbm": 44.4,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 69.35,
+          "coverage_radius_m": 544.42,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Jio",
+          "technology": "4G",
+          "frequency_mhz": 2300,
+          "transmit_power_dbm": 40.73,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 61.07,
+          "coverage_radius_m": 1408.55,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Jio",
+          "technology": "5G",
+          "frequency_mhz": 3500,
+          "transmit_power_dbm": 40.79,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 63.35,
+          "coverage_radius_m": 716.86,
+          "rss_dbm": -110.0
+        }
+      ]
+    },
+    {
+      "node_id": 5,
+      "name": "Ground Tower 5",
+      "tower_type": "ground",
+      "latitude": 12.9644,
+      "longitude": 77.6275,
+      "health": 1.0,
+      "operational_status": "normal",
+      "power_consumption_kw": 4.1,
+      "battery": {
+        "capacity_kwh": 16.81,
+        "remaining_kwh": 16.81,
+        "backup_hours": 4.1,
+        "on_battery": false
+      },
+      "providers": [
+        {
+          "operator": "Vi",
+          "technology": "2G",
+          "frequency_mhz": 900,
+          "transmit_power_dbm": 45.63,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 74.97,
+          "coverage_radius_m": 1277.2,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Vi",
+          "technology": "4G",
+          "frequency_mhz": 2500,
+          "transmit_power_dbm": 45.89,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 65.13,
+          "coverage_radius_m": 1470.82,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Airtel",
+          "technology": "3G",
+          "frequency_mhz": 2100,
+          "transmit_power_dbm": 41.38,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 63.17,
+          "coverage_radius_m": 1305.51,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Airtel",
+          "technology": "4G",
+          "frequency_mhz": 1800,
+          "transmit_power_dbm": 43.37,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 63.13,
+          "coverage_radius_m": 1924.1,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Airtel",
+          "technology": "5G",
+          "frequency_mhz": 3500,
+          "transmit_power_dbm": 42.97,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 61.35,
+          "coverage_radius_m": 1159.93,
+          "rss_dbm": -110.0
+        }
+      ]
+    },
+    {
+      "node_id": 6,
+      "name": "Ground Tower 6",
+      "tower_type": "ground",
+      "latitude": 12.9643,
+      "longitude": 77.632,
+      "health": 1.0,
+      "operational_status": "normal",
+      "power_consumption_kw": 3.53,
+      "battery": {
+        "capacity_kwh": 15.18,
+        "remaining_kwh": 15.18,
+        "backup_hours": 4.3,
+        "on_battery": false
+      },
+      "providers": [
+        {
+          "operator": "Vi",
+          "technology": "2G",
+          "frequency_mhz": 900,
+          "transmit_power_dbm": 44.65,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 82.92,
+          "coverage_radius_m": 456.83,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Vi",
+          "technology": "4G",
+          "frequency_mhz": 2500,
+          "transmit_power_dbm": 40.51,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 67.39,
+          "coverage_radius_m": 610.32,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Airtel",
+          "technology": "3G",
+          "frequency_mhz": 2100,
+          "transmit_power_dbm": 40.13,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 61.96,
+          "coverage_radius_m": 1299.51,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Airtel",
+          "technology": "4G",
+          "frequency_mhz": 1800,
+          "transmit_power_dbm": 45.57,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 60.16,
+          "coverage_radius_m": 3489.21,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Airtel",
+          "technology": "5G",
+          "frequency_mhz": 3500,
+          "transmit_power_dbm": 40.03,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 64.25,
+          "coverage_radius_m": 592.15,
+          "rss_dbm": -110.0
+        }
+      ]
+    },
+    {
+      "node_id": 7,
+      "name": "Ground Tower 7",
+      "tower_type": "ground",
+      "latitude": 12.9617,
+      "longitude": 77.6311,
+      "health": 1.0,
+      "operational_status": "normal",
+      "power_consumption_kw": 4.41,
+      "battery": {
+        "capacity_kwh": 29.11,
+        "remaining_kwh": 29.11,
+        "backup_hours": 6.6,
+        "on_battery": false
+      },
+      "providers": [
+        {
+          "operator": "Airtel",
+          "technology": "4G",
+          "frequency_mhz": 1800,
+          "transmit_power_dbm": 43.2,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 66.92,
+          "coverage_radius_m": 1219.63,
+          "rss_dbm": -110.0
+        }
+      ]
+    },
+    {
+      "node_id": 8,
+      "name": "Ground Tower 8",
+      "tower_type": "ground",
+      "latitude": 12.9587,
+      "longitude": 77.6264,
+      "health": 1.0,
+      "operational_status": "normal",
+      "power_consumption_kw": 3.11,
+      "battery": {
+        "capacity_kwh": 13.99,
+        "remaining_kwh": 13.99,
+        "backup_hours": 4.5,
+        "on_battery": false
+      },
+      "providers": [
+        {
+          "operator": "Airtel",
+          "technology": "4G",
+          "frequency_mhz": 2100,
+          "transmit_power_dbm": 43.71,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 67.64,
+          "coverage_radius_m": 1020.42,
+          "rss_dbm": -110.0
+        }
+      ]
+    },
+    {
+      "node_id": 9,
+      "name": "Ground Tower 9",
+      "tower_type": "ground",
+      "latitude": 12.9823,
+      "longitude": 77.6347,
+      "health": 1.0,
+      "operational_status": "normal",
+      "power_consumption_kw": 4.02,
+      "battery": {
+        "capacity_kwh": 17.69,
+        "remaining_kwh": 17.69,
+        "backup_hours": 4.4,
+        "on_battery": false
+      },
+      "providers": [
+        {
+          "operator": "Jio",
+          "technology": "4G",
+          "frequency_mhz": 1800,
+          "transmit_power_dbm": 41.42,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 73.22,
+          "coverage_radius_m": 481.09,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Jio",
+          "technology": "5G",
+          "frequency_mhz": 3500,
+          "transmit_power_dbm": 41.91,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 69.27,
+          "coverage_radius_m": 412.51,
+          "rss_dbm": -110.0
+        }
+      ]
+    },
+    {
+      "node_id": 10,
+      "name": "Ground Tower 10",
+      "tower_type": "ground",
+      "latitude": 12.9859,
+      "longitude": 77.6288,
+      "health": 1.0,
+      "operational_status": "normal",
+      "power_consumption_kw": 4.94,
+      "battery": {
+        "capacity_kwh": 20.75,
+        "remaining_kwh": 20.75,
+        "backup_hours": 4.2,
+        "on_battery": false
+      },
+      "providers": [
+        {
+          "operator": "Vi",
+          "technology": "2G",
+          "frequency_mhz": 900,
+          "transmit_power_dbm": 41.06,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 86.65,
+          "coverage_radius_m": 196.68,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Vi",
+          "technology": "4G",
+          "frequency_mhz": 2500,
+          "transmit_power_dbm": 42.26,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 63.54,
+          "coverage_radius_m": 1162.95,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Airtel",
+          "technology": "2G",
+          "frequency_mhz": 900,
+          "transmit_power_dbm": 41.96,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 87.59,
+          "coverage_radius_m": 195.78,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Airtel",
+          "technology": "4G",
+          "frequency_mhz": 2100,
+          "transmit_power_dbm": 44.39,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 66.82,
+          "coverage_radius_m": 1212.78,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Airtel",
+          "technology": "5G",
+          "frequency_mhz": 3500,
+          "transmit_power_dbm": 44.2,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 74.1,
+          "coverage_radius_m": 307.92,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Jio",
+          "technology": "4G",
+          "frequency_mhz": 2300,
+          "transmit_power_dbm": 42.25,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 63.51,
+          "coverage_radius_m": 1266.99,
+          "rss_dbm": -110.0
+        }
+      ]
+    },
+    {
+      "node_id": 11,
+      "name": "Ground Tower 11",
+      "tower_type": "ground",
+      "latitude": 12.9847,
+      "longitude": 77.6124,
+      "health": 1.0,
+      "operational_status": "normal",
+      "power_consumption_kw": 5.97,
+      "battery": {
+        "capacity_kwh": 38.21,
+        "remaining_kwh": 38.21,
+        "backup_hours": 6.4,
+        "on_battery": false
+      },
+      "providers": [
+        {
+          "operator": "BSNL",
+          "technology": "2G",
+          "frequency_mhz": 850,
+          "transmit_power_dbm": 40.68,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 72.36,
+          "coverage_radius_m": 1032.95,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "BSNL",
+          "technology": "3G",
+          "frequency_mhz": 2100,
+          "transmit_power_dbm": 45.16,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 61.78,
+          "coverage_radius_m": 2367.45,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "BSNL",
+          "technology": "4G",
+          "frequency_mhz": 850,
+          "transmit_power_dbm": 41.17,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 74.82,
+          "coverage_radius_m": 823.34,
+          "rss_dbm": -110.0
+        }
+      ]
+    },
+    {
+      "node_id": 12,
+      "name": "Ground Tower 12",
+      "tower_type": "ground",
+      "latitude": 12.9615,
+      "longitude": 77.613,
+      "health": 1.0,
+      "operational_status": "normal",
+      "power_consumption_kw": 3.48,
+      "battery": {
+        "capacity_kwh": 20.53,
+        "remaining_kwh": 20.53,
+        "backup_hours": 5.9,
+        "on_battery": false
+      },
+      "providers": [
+        {
+          "operator": "Airtel",
+          "technology": "4G",
+          "frequency_mhz": 1800,
+          "transmit_power_dbm": 44.06,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 69.85,
+          "coverage_radius_m": 961.01,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Airtel",
+          "technology": "5G",
+          "frequency_mhz": 3500,
+          "transmit_power_dbm": 40.27,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 67.15,
+          "coverage_radius_m": 435.95,
+          "rss_dbm": -110.0
+        }
+      ]
+    },
+    {
+      "node_id": 13,
+      "name": "Ground Tower 13",
+      "tower_type": "ground",
+      "latitude": 12.9682,
+      "longitude": 77.6127,
+      "health": 1.0,
+      "operational_status": "normal",
+      "power_consumption_kw": 3.29,
+      "battery": {
+        "capacity_kwh": 22.04,
+        "remaining_kwh": 22.04,
+        "backup_hours": 6.7,
+        "on_battery": false
+      },
+      "providers": [
+        {
+          "operator": "Airtel",
+          "technology": "4G",
+          "frequency_mhz": 2300,
+          "transmit_power_dbm": 40.09,
+          "antenna_gain_dbi": 15,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 62.03,
+          "coverage_radius_m": 1171.58,
+          "rss_dbm": -110.0
+        }
+      ]
+    },
+    {
+      "node_id": 14,
+      "name": "Wall Tower 1",
+      "tower_type": "wall",
+      "latitude": 12.9736,
+      "longitude": 77.6219,
+      "health": 1.0,
+      "operational_status": "normal",
+      "power_consumption_kw": 1.12,
+      "battery": {
+        "capacity_kwh": 6.16,
+        "remaining_kwh": 6.16,
+        "backup_hours": 5.5,
+        "on_battery": false
+      },
+      "providers": [
+        {
+          "operator": "Jio",
+          "technology": "4G",
+          "frequency_mhz": 850,
+          "transmit_power_dbm": 27.58,
+          "antenna_gain_dbi": 5,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 61.71,
+          "coverage_radius_m": 246.37,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Jio",
+          "technology": "5G",
+          "frequency_mhz": 3500,
+          "transmit_power_dbm": 31.6,
+          "antenna_gain_dbi": 5,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 69.54,
+          "coverage_radius_m": 38.59,
+          "rss_dbm": -110.0
+        }
+      ]
+    },
+    {
+      "node_id": 15,
+      "name": "Wall Tower 2",
+      "tower_type": "wall",
+      "latitude": 12.9733,
+      "longitude": 77.6093,
+      "health": 1.0,
+      "operational_status": "normal",
+      "power_consumption_kw": 1.72,
+      "battery": {
+        "capacity_kwh": 13.24,
+        "remaining_kwh": 13.24,
+        "backup_hours": 7.7,
+        "on_battery": false
+      },
+      "providers": [
+        {
+          "operator": "Jio",
+          "technology": "4G",
+          "frequency_mhz": 850,
+          "transmit_power_dbm": 32.0,
+          "antenna_gain_dbi": 5,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 72.15,
+          "coverage_radius_m": 123.19,
+          "rss_dbm": -110.0
+        },
+        {
+          "operator": "Jio",
+          "technology": "5G",
+          "frequency_mhz": 3500,
+          "transmit_power_dbm": 32.76,
+          "antenna_gain_dbi": 5,
+          "receive_gain_dbi": -2.0,
+          "environmental_loss_db": 60.79,
+          "coverage_radius_m": 120.76,
+          "rss_dbm": -110.0
+        }
+      ]
+    }
+  ]
+}
