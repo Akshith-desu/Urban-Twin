@@ -4,7 +4,9 @@ from typing import List, Dict, Any
 
 from event_bus import EventBus
 from event_schema import Event, EventType, Network, sim_tick, sim_end
-from agents import PowerAgent, TelecomAgent, WaterAgent
+from power_agent import PowerAgent
+from telecom_agent import TelecomAgent
+from water_agent import WaterAgent
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("orchestrator")
@@ -28,9 +30,7 @@ class SimulationOrchestrator:
         """Start the bus and all agents."""
         await self.bus.start()
         for agent in self.agents:
-            await agent.start()
-            # Start agent's event loop in background
-            asyncio.create_task(agent.run())
+            asyncio.create_task(agent.start())   # don't await — start() runs forever by design
         
         self.running = True
         logger.info(f"Simulation Orchestrator started with {len(self.agents)} agents.")
@@ -68,10 +68,9 @@ class SimulationOrchestrator:
                     EventType.FLOOD_NODE,
                     Network.SYSTEM,
                     str(nid),
-                    node_name=names.get(nid),
                     severity=1.0,
                     tick=self.current_tick,
-                    metadata={"reason": "flood_injection"}
+                    metadata={"reason": "flood_injection", "node_name": names.get(nid)}
                 ))
         
         elif scenario_type == "recovery":
@@ -83,10 +82,9 @@ class SimulationOrchestrator:
                     EventType.NODE_RECOVERED,
                     Network.SYSTEM,
                     str(nid),
-                    node_name=names.get(nid),
                     severity=0.0,
                     tick=self.current_tick,
-                    metadata={"reason": "manual_recovery"}
+                    metadata={"reason": "manual_recovery", "node_name": names.get(nid)}
                 ))
 
 async def test_run():

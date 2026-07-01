@@ -99,6 +99,7 @@ export default function NetworkMapClient({ networkData, focusNetwork, showAllNet
   const [mapMode, setMapMode] = useState<"dark" | "satellite">("satellite");
   const [dependencies, setDependencies] = useState<any[]>([]);
   const [allNodesMap, setAllNodesMap] = useState<Record<string, [number, number]>>({});
+  
 
   useEffect(() => {
     // 1. Fetch historical failures
@@ -263,24 +264,30 @@ export default function NetworkMapClient({ networkData, focusNetwork, showAllNet
 
   };
 
-  const onEachFeature = (feature: any, layer: L.Layer) => {
+const onEachFeature = (feature: any, layer: L.Layer) => {
+  const isNode = feature.properties?._ftype === "node";
+
+  if (isNode) {
     layer.on('click', (e) => {
       setSelectedNode(feature.properties);
       L.DomEvent.stopPropagation(e);
     });
+  }
 
-    if (feature.properties) {
-      const p = feature.properties;
-      const tooltipTitle = p.name || `${(p.node_type || 'Asset').replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())} ${p.node_id || p.id}`;
-      const tooltipContent = `
-        <div class="glass p-2 border-0 rounded shadow-none text-[10px] font-sans">
-          <strong class="text-white">${tooltipTitle}</strong>
-          <div class="text-slate-400 mt-0.5 uppercase tracking-tighter">${p._network || 'Infrastructure'} | ${p.node_id || p.id}</div>
-        </div>
-      `;
-      layer.bindTooltip(tooltipContent, { sticky: true, className: 'custom-tooltip' });
-    }
-  };
+  if (feature.properties) {
+    const p = feature.properties;
+    const tooltipTitle = isNode
+      ? (p.name || `${(p.node_type || 'Asset').replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())} ${p.node_id || p.id}`)
+      : `${(p.edge_type || 'Link').replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}`;
+    const tooltipContent = `
+      <div class="glass p-2 border-0 rounded shadow-none text-[10px] font-sans">
+        <strong class="text-white">${tooltipTitle}</strong>
+        <div class="text-slate-400 mt-0.5 uppercase tracking-tighter">${p._network || 'Infrastructure'}${isNode ? ` | ${p.node_id || p.id}` : ''}</div>
+      </div>
+    `;
+    layer.bindTooltip(tooltipContent, { sticky: true, className: 'custom-tooltip' });
+  }
+};
 
   return (
     <div className="relative w-full h-full bg-[#060910] overflow-hidden">
@@ -344,21 +351,21 @@ export default function NetworkMapClient({ networkData, focusNetwork, showAllNet
                 </h4>
                 <div className="grid gap-4">
                   <div className="p-4 bg-slate-900/50 rounded-xl border border-slate-800/50 space-y-4">
-                    <MetricBar label="System Health" value={selectedNode.health} colorClass={selectedNode.health > 0.8 ? "bg-emerald-500" : selectedNode.health > 0.4 ? "bg-amber-500" : "bg-rose-500"} />
+                    {/* <MetricBar label="System Health" value={selectedNode.health} colorClass={selectedNode.health > 0.8 ? "bg-emerald-500" : selectedNode.health > 0.4 ? "bg-amber-500" : "bg-rose-500"} /> */}
                     {selectedNode.health_history && (
                       <div className="pt-2 border-t border-slate-800/50">
                         <div className="text-[9px] text-slate-500 uppercase mb-2">Health Log (Recent)</div>
-                        <HealthHistory history={selectedNode.health_history} />
+                        {/* <HealthHistory history={selectedNode.health_history} /> */}
                       </div>
                     )}
                   </div>
                   
                   <div className="grid grid-cols-2 gap-3">
                     <div className="p-3 bg-slate-900/50 rounded-xl border border-slate-800/50">
-                      <MetricBar label="Criticality" value={selectedNode.criticality || 0} colorClass="bg-blue-500" max={10} />
+                      {/* <MetricBar label="Criticality" value={selectedNode.criticality || 0} colorClass="bg-blue-500" max={10} /> */}
                     </div>
                     <div className="p-3 bg-slate-900/50 rounded-xl border border-slate-800/50">
-                      <MetricBar label="Load" value={selectedNode.load_fraction || 0} colorClass="bg-indigo-500" />
+                      {/* <MetricBar label="Load" value={selectedNode.load_fraction || 0} colorClass="bg-indigo-500" /> */}
                     </div>
                   </div>
                 </div>

@@ -1,0 +1,75 @@
+# See all node names/IDs
+python monte_carlo.py --list-nodes
+
+# Fail a substation WITH cascade propagation to water/telecom
+python monte_carlo.py --fail "Substation 1" --cascade-mode
+
+# Guaranteed full cascade (no backup possible)
+python monte_carlo.py --fail-all-substations --runs 200
+
+# Fail a specific pump station directly
+python monte_carlo.py --fail "BWSSB Indiranagar"
+
+# Fail a junction + flood scenario
+python monte_carlo.py --fail "WPJ-0003" --flood --cascade-mode
+
+# Multiple targets at once
+python monte_carlo.py --fail "Substation 1" "Substation 2" --cascade-mode --runs 500
+
+
+
+
+
+
+First, list all available nodes to know what you can fail:
+bashpython monte_carlo.py --list-nodes
+
+Basic runs — cascade auto-applies for substations:
+bash# Fail Substation 1 (100 runs)
+python monte_carlo.py --fail "Substation 1" --runs 100
+
+# Fail Substation 1 (1000 runs, full analysis)
+python monte_carlo.py --fail "Substation 1" --runs 1000
+
+# Fail all 3 substations at once (worst case)
+python monte_carlo.py --fail-all-substations --runs 100
+
+Fail specific nodes from any network:
+bash# Fail a transformer directly
+python monte_carlo.py --fail "Transformer 1" --runs 100
+
+# Fail a water pump
+python monte_carlo.py --fail "BWSSB Indiranagar" --runs 100
+
+# Fail multiple nodes simultaneously
+python monte_carlo.py --fail "Substation 1" "Substation 2" --runs 100
+
+# Fail substation + pump at same time
+python monte_carlo.py --fail "Substation 1" "BWSSB Indiranagar" --runs 100
+
+Add flood scenario:
+bash# Substation failure + flood at tick 5
+python monte_carlo.py --fail "Substation 1" --flood --runs 100
+
+# All substations + flood
+python monte_carlo.py --fail-all-substations --flood --runs 100
+
+Control cascade behaviour:
+bash# Baseline — see what happens with NO cascade forcing (substation fails but no cross-network)
+python monte_carlo.py --fail "Substation 1" --no-cascade --runs 100
+
+# Longer simulation (120 ticks = 600 minutes = 10 hours)
+python monte_carlo.py --fail "Substation 1" --runs 100 --ticks 120
+
+Compare scenarios side by side:
+bash# Run scenario 1
+python monte_carlo.py --fail "Substation 1" --runs 500 --seed-base 0
+
+# Run scenario 2 with same seeds for fair comparison
+python monte_carlo.py --fail "Substation 2" --runs 500 --seed-base 0
+
+# Run scenario 3
+python monte_carlo.py --fail "Substation 1" --flood --runs 500 --seed-base 0
+
+For your mentor presentation — recommended run:
+bashpython monte_carlo.py --fail "Substation 1" --runs 1000 --ticks 60

@@ -13,7 +13,8 @@ import {
   Clock, 
   Layers,
   Database,
-  ShieldCheck
+  ShieldCheck,
+  BarChart3
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -25,8 +26,9 @@ export default function Sidebar() {
     { href: "/map/power", label: "Power Grid", icon: Zap, color: "text-power" },
     { href: "/map/water", label: "Water System", icon: Droplet, color: "text-water" },
     { href: "/map/telecom", label: "Telecom Setup", icon: Wifi, color: "text-telecom" },
-    { href: "/simulation", label: "Strategic Engine", icon: PlayCircle, color: "text-purple-400" },
+    // { href: "/simulation", label: "Strategic Engine", icon: PlayCircle, color: "text-purple-400" },
     { href: "/replay", label: "Replay Viewer", icon: Clock, color: "text-slate-400" },
+    { href: "/montecarlo", label: "Monte Carlo Engine", icon: BarChart3, color: "text-purple-400" },
   ];
 
   return (

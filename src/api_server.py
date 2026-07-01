@@ -15,6 +15,9 @@ import numpy as np
 from event_bus import EventBus
 from event_schema import EventType, Network, Event
 from orchestrator import SimulationOrchestrator
+# api_server.py — add to existing import line:
+from event_schema import EventType, Network, Event, user_fail_node, user_restore_node
+import sys, csv as _csv
 
 app = FastAPI(title="Urban Twin API", version="1.0.0")
 
@@ -155,7 +158,6 @@ def load_network(network: str) -> dict:
         "node_count": len(nodes_fc["features"]),
         "edge_count": len(edges_fc["features"]),
     }
-
 
 # ── Startup ───────────────────────────────────────────────────────────────────
 
@@ -304,37 +306,33 @@ async def recover_nodes(body: dict):
     lat = float(body.get("lat", 12.9762))
     lon = float(body.get("lon", 77.6265))
     radius_m = float(body.get("radius_m", 500))
-
     rad_deg = radius_m / 111_000
-    affected_nodes = []
-    node_names = {}
+
+    affected = []
     for net in NETWORKS:
         for f in _graph_cache.get(net, {}).get("nodes", {}).get("features", []):
             g = f.get("geometry", {})
             if g.get("type") == "Point":
                 c = g["coordinates"]
-                d = math.hypot(c[1] - lat, c[0] - lon)
-                if d < rad_deg:
-                    props = f.get("properties", {})
-                    nid = props.get("node_id")
+                if math.hypot(c[1] - lat, c[0] - lon) < rad_deg:
+                    nid = f.get("properties", {}).get("node_id")
                     if nid:
-                        affected_nodes.append(nid)
-                        node_names[nid] = props.get("name") or nid
+                        affected.append((str(nid), net))
 
-    await orch.inject_scenario("recovery", {"nodes": affected_nodes, "names": node_names})
-    return {"status": "recovery_initiated", "affected_count": len(affected_nodes)}
+    for nid, net in affected:
+        await bus.publish(user_restore_node(Network(net), nid, tick=orch.current_tick))
 
+    asyncio.create_task(orch.run_step())
+    return {"status": "recovery_initiated", "affected_count": len(affected)}
 
 # ── Manual Failure / Recovery ─────────────────────────────────────────────────
 
 @app.post("/api/simulation/fail-node")
 async def fail_node(body: dict):
     node_id = str(body.get("node_id", ""))
-    print(f"Manual fail-node request received for: {node_id}")
     if not node_id:
         raise HTTPException(status_code=400, detail="node_id is required")
 
-    # Find name and network from cache
     display_name = "Asset " + node_id
     source_network = Network.SYSTEM
     for net in NETWORKS:
@@ -347,32 +345,23 @@ async def fail_node(body: dict):
                 source_network = Network(net)
                 break
 
-    # 1. Directly broadcast initial failure for immediate UI feedback
     direct_event = {
-        "event_id": str(uuid.uuid4())[:8],
-        "timestamp": time.time(),
-        "tick": orch.current_tick,
-        "event_type": "NODE_FAILED",
-        "source_network": source_network.value,
-        "node_id": node_id,
-        "node_name": display_name,
-        "severity": 1.0,
-        "affected_nodes": [],
-        "cascade_depth": 0,
+        "event_id": str(uuid.uuid4())[:8], "timestamp": time.time(),
+        "tick": orch.current_tick, "event_type": "NODE_FAILED",
+        "source_network": source_network.value, "node_id": node_id,
+        "node_name": display_name, "severity": 1.0,
+        "affected_nodes": [], "cascade_depth": 0,
         "metadata": {"reason": "manual_injection"}
     }
     await manager.broadcast({"type": "event", "data": direct_event})
 
-    # 2. Inject into agent-based simulation for cascading failures
-    # Agents handle the dependency logic defined in their files.
-    await orch.inject_scenario("flood", {"nodes": [node_id], "names": {node_id: display_name}})
+    # Deterministic — skips flood's per-type dice rolls entirely
+    await bus.publish(user_fail_node(source_network, node_id, tick=orch.current_tick))
 
     async def run_steps():
-        # Run multiple ticks to allow cascades to propagate through agents
         for _ in range(5):
             await orch.run_step()
             await asyncio.sleep(0.5)
-
     asyncio.create_task(run_steps())
     return {"status": "node_failed", "node_id": node_id, "name": display_name}
 
@@ -383,23 +372,163 @@ async def recover_node(body: dict):
     if not node_id:
         raise HTTPException(status_code=400, detail="node_id is required")
 
-    # 1. Direct visual update
+    source_network = Network.SYSTEM
+    for net in NETWORKS:
+        for f in _graph_cache.get(net, {}).get("nodes", {}).get("features", []):
+            props = f.get("properties", {})
+            if str(props.get("node_id", "")) == node_id or str(props.get("id", "")) == node_id:
+                source_network = Network(net)
+                break
+
     direct_event = {
-        "event_id": str(uuid.uuid4())[:8],
-        "timestamp": time.time(),
-        "tick": orch.current_tick,
-        "event_type": "NODE_RECOVERED",
-        "source_network": "system",
-        "node_id": node_id,
-        "node_name": None,
-        "severity": 0.0,
-        "affected_nodes": [],
-        "cascade_depth": 0,
+        "event_id": str(uuid.uuid4())[:8], "timestamp": time.time(),
+        "tick": orch.current_tick, "event_type": "NODE_RECOVERED",
+        "source_network": source_network.value, "node_id": node_id,
+        "node_name": None, "severity": 0.0,
+        "affected_nodes": [], "cascade_depth": 0,
         "metadata": {"reason": "manual_recovery"}
     }
     await manager.broadcast({"type": "event", "data": direct_event})
 
-    # 2. Inject recovery into simulation
-    await orch.inject_scenario("recovery", {"nodes": [node_id], "names": {}})
+    await bus.publish(user_restore_node(source_network, node_id, tick=orch.current_tick))
     asyncio.create_task(orch.run_step())
     return {"status": "node_recovered", "node_id": node_id}
+
+@app.get("/api/montecarlo/nodes")
+async def mc_nodes():
+    result = {}
+    for net in NETWORKS:
+        net_nodes = []
+        for f in _graph_cache.get(net, {}).get("nodes", {}).get("features", []):
+            p = f.get("properties", {})
+            nid = p.get("node_id") or p.get("id")
+            ntype = p.get("power") or p.get("node_type") or "tower"
+            if nid:
+                net_nodes.append({
+                    "id": str(nid),
+                    "name": p.get("name") or str(nid),
+                    "type": ntype
+                })
+        result[net] = net_nodes
+    return JSONResponse(result)
+
+@app.get("/api/live-state")
+async def live_state():
+    state = {}
+    for agent in orch.agents:
+        net_key = agent.name.replace("_agent", "")
+        if hasattr(agent, "get_all_states"):
+            state[net_key] = agent.get_all_states()
+    return JSONResponse(state)
+
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
+_mc_executor = ThreadPoolExecutor(max_workers=1)
+
+@app.post("/api/montecarlo/run")
+async def run_montecarlo_api(body: dict):
+    fail_nodes = body.get("fail", [])
+    runs       = max(10, min(int(body.get("runs", 100)), 500))
+    ticks      = max(10, min(int(body.get("ticks", 60)), 120))
+    flood      = bool(body.get("flood", False))
+    no_cascade = bool(body.get("no_cascade", False))
+    fail_all   = bool(body.get("fail_all_substations", False))
+
+    cmd = [
+        str(sys.executable),
+        str(BASE_DIR / "monte_carlo_3.py"),
+        "--runs", str(runs),
+        "--ticks", str(ticks),
+        "--seed-base", "0"
+    ]
+    if fail_all:
+        cmd.append("--fail-all-substations")
+    elif fail_nodes:
+        cmd += ["--fail"] + [str(n) for n in fail_nodes]
+    if flood:      cmd.append("--flood")
+    if no_cascade: cmd.append("--no-cascade")
+
+    def _run_mc():
+        env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
+        return subprocess.run(
+            cmd, capture_output=True, text=True,
+            cwd=str(BASE_DIR), timeout=300,
+            env=env, encoding="utf-8", errors="replace"
+        )
+
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(_mc_executor, _run_mc)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(500, "Monte Carlo timed out (5 min limit)")
+    except Exception as e:
+        raise HTTPException(500, f"Monte Carlo failed to start: {e}")
+
+    if result.returncode != 0:
+        err = result.stderr.strip()[:600] or result.stdout.strip()[:600]
+        raise HTTPException(500, f"MC error: {err}")
+
+    csv_path = DATA_DIR / "monte_carlo_results.csv"
+    if not csv_path.exists():
+        raise HTTPException(500, "Results CSV not found — check monte_carlo_3.py output")
+
+    results = []
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        for row in _csv.DictReader(f):
+            results.append(row)
+
+    N = len(results)
+    if N == 0:
+        raise HTTPException(500, "Empty results file")
+
+    def avg(key):
+        vals = [float(r.get(key, 0)) for r in results]
+        return round(sum(vals) / len(vals), 3)
+
+    def prob(fn):
+        return round(sum(1 for r in results if fn(r)) / N * 100, 1)
+
+    from collections import Counter
+    c_tx, c_pump, c_tower = Counter(), Counter(), Counter()
+    for r in results:
+        for nm in r.get("failed_transformers","").split("; "):
+            if nm and nm != "none": c_tx[nm] += 1
+        for nm in r.get("failed_pumps","").split("; "):
+            if nm and nm != "none": c_pump[nm] += 1
+        for nm in r.get("failed_towers","").split("; "):
+            if nm and nm != "none": c_tower[nm] += 1
+
+    return JSONResponse({
+        "runs": N,
+        "risk": {
+            "Transformer failure":       prob(lambda r: float(r.get("power_tx_failed",0)) > 0),
+            "Water pump failure":        prob(lambda r: float(r.get("water_pumps_failed",0)) > 0),
+            "Pump on backup generator":  prob(lambda r: float(r.get("water_pumps_backup",0)) > 0),
+            "Water tower draining":      prob(lambda r: float(r.get("water_towers_draining",0)) > 0),
+            "Water tower empty":         prob(lambda r: float(r.get("water_towers_empty",0)) > 0),
+            "Pipe burst":                prob(lambda r: float(r.get("water_pipe_bursts",0)) > 0),
+            "Telecom tower on battery":  prob(lambda r: float(r.get("telecom_on_battery",0)) > 0),
+            "Telecom tower failed":      prob(lambda r: float(r.get("telecom_failed",0)) > 0),
+            "Cross-network cascade":     prob(lambda r: float(r.get("real_cross_network_cascade",0)) > 0),
+            "Water pressure critical":   prob(lambda r: float(r.get("water_min_pressure",1)) < 0.4),
+            "Telecom battery critical":  prob(lambda r: float(r.get("telecom_min_batt_pct",100)) < 30),
+        },
+        "averages": {
+            "subs_failed":     avg("power_subs_failed"),
+            "tx_failed":       avg("power_tx_failed"),
+            "feeder_drops":    avg("power_feeder_drops"),
+            "pumps_failed":    avg("water_pumps_failed"),
+            "pumps_backup":    avg("water_pumps_backup"),
+            "towers_draining": avg("water_towers_draining"),
+            "avg_pressure":    avg("water_avg_pressure"),
+            "min_pressure":    avg("water_min_pressure"),
+            "telecom_battery": avg("telecom_on_battery"),
+            "cascade_events":  avg("total_cascade_events"),
+        },
+        "vulnerable": {
+            "transformers": [{"name": k, "pct": round(v/N*100,1)} for k,v in c_tx.most_common(5)],
+            "pumps":        [{"name": k, "pct": round(v/N*100,1)} for k,v in c_pump.most_common(3)],
+            "towers":       [{"name": k, "pct": round(v/N*100,1)} for k,v in c_tower.most_common(3)],
+        }
+    })
+
