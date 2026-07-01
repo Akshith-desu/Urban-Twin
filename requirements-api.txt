@@ -1,0 +1,4 @@
+fastapi
+uvicorn[standard]
+geopandas
+python-multipart

@@ -17,7 +17,7 @@ Node types:
   pipe_junction — intermediate distribution nodes (subject to Equations 2, 3, 6)
 
 Cascade equations embedded at bottom (comments) for agent reference.
-"""
+""" 
 
 import os
 import json

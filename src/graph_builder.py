@@ -143,6 +143,21 @@ def build_road_graph():
         data["flood_risk"]   = False
         data["pop_density"]  = 1.0
         data["elevation"]    = 0.0   # NOTE: placeholder — replace with SRTM/Copernicus DEM
+        # ── Phase 3 additions ─────────────────────────────
+        data["pending_cascades"]       = "[]"
+        data["cascade_description"]    = ""
+        data["health_history"]         = "[1.0,1.0,1.0,1.0,1.0]"
+        data["passable"]               = True
+        data["capacity_fraction"]      = 1.0
+        data["congestion_factor"]      = 1.0
+        data["travel_time_multiplier"] = 1.0
+        data["flood_depth_m"]          = 0.0
+        data["is_flooded"]             = False
+        data["signal_operational"]     = True
+        data["is_major_intersection"]  = False
+        data["baseline_travel_time_s"] = 30.0
+        data["hospital_access_time_s"] = 30.0
+        data["emergency_route"]        = False
 
     # edge simulation attributes
     for u,v,k, data in G_proj.edges(keys=True, data=True):
